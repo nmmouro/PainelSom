@@ -17,98 +17,31 @@
   --accent:#00eaff;
 }
 
-html,body{
-  height:100%;
-  margin:0;
-  background:var(--bg);
-  color:#fff;
-  font-family:Inter,Arial;
-}
+html,body{height:100%;margin:0;background:var(--bg);color:#fff;font-family:Inter,Arial}
 
-header{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:12px 80px;
-  background:#020617;
-  border-radius:10px;
-}
-
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 40px;background:#020617}
 header img{height:66px}
-header .title{font-size:24px;font-weight:700;color:var(--accent)}
-header .clock{font-size:20px;color:var(--muted)}
+header .title{font-size:22px;font-weight:700;color:var(--accent)}
+header .clock{font-size:18px;color:var(--muted)}
 
-main{
-  padding:12px;
-  display:grid;
-  grid-template-rows:1fr 1fr 1fr;
-  gap:10px;
-  height:calc(100vh - 92px);
-}
+main{padding:12px;display:grid;grid-template-rows:1fr 1fr 1fr;gap:10px;height:calc(100vh - 92px)}
 
-.card{
-  background:var(--card);
-  border-radius:10px;
-  padding:12px;
-  overflow:auto;
-}
+.card{background:var(--card);border-radius:10px;padding:12px;overflow:auto}
+.card h2{text-align:center;color:var(--accent);margin:0 0 8px}
 
-.card h2{
-  margin:1 1 8px;
-  color:var(--accent);
-  font-size:18px;
-  text-align:center;
-}
+table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}
+th,td{padding:8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+thead th{position:sticky;top:0;background:#0435bf;z-index:2}
 
-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:16px;
-}
+tr.status-atendido{background:rgba(147,219,112,.18)}
+tr.status-andamento{background:rgba(219,147,112,.18)}
+tr.status-concluido{background:rgba(0,200,120,.12)}
 
-th,td{
-  padding:12px 16px;
-  font-weight:700;
-  text-align:center;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-
-thead th{
-  position:sticky;
-  top:0;
-  z-index:1000;
-  background:#0435bf;
-  padding:10px;
-  text-align:center;
-}
-
-th:last-child,
-td:last-child{
-  border-right:none;
-  width:50px;
-  text-align:center;
-}
-
-td.status-icon{
-  font-size:20px;
-}
-
-tr.status-atendido{background:rgba(147,219,112,0.18)}
-tr.status-andamento{background:rgba(219,147,112,0.18)}
-tr.status-concluido{background:rgba(0,200,120,0.06)}
-
-.small{
-  text-align:center;
-  font-size:12px;
-  color:var(--muted);
-}
+.small{text-align:center;font-size:12px;color:var(--muted)}
 </style>
 </head>
 
 <body>
-
 <header>
   <img src="logo.png" onerror="this.style.display='none'">
   <div class="title">MOVIMENTAÇÃO DIÁRIA</div>
@@ -116,139 +49,80 @@ tr.status-concluido{background:rgba(0,200,120,0.06)}
 </header>
 
 <main>
-  <section class="card">
-    <h2>PAINEL</h2>
-    <div id="painel">Carregando...</div>
-  </section>
-
-  <section class="card">
-    <h2>AGENDA DO DIA</h2>
-    <div id="agenda">Carregando...</div>
-  </section>
-
-  <section class="card">
-    <h2>AGENDA SERVIÇO SOCIAL</h2>
-    <div id="social">Carregando...</div>
-  </section>
+  <section class="card"><h2>PAINEL</h2><div id="painel">Carregando...</div></section>
+  <section class="card"><h2>AGENDA DO DIA</h2><div id="agenda">Carregando...</div></section>
+  <section class="card"><h2>AGENDA SERVIÇO SOCIAL</h2><div id="social">Carregando...</div></section>
 </main>
 
 <div class="small">Atualização automática a cada 60s • Google Sheets</div>
 
-<!-- 🔊 ÁUDIO -->
-<audio id="beep">
-  <source src="alerta.mp3" type="audio/mpeg">
-</audio>
-
 <script>
-/* ================= CONFIG ================= */
 const SHEET_ID = "1Ch3AjQ0MDo4WuQWFDR3r8nZrHb4yQkSLOtT5_QgxT6E";
 const TAB_PAINEL = "PAINEL";
 const TAB_AGENDA = "AGENDA DO DIA";
 const TAB_SS = "AGENDA SERVIÇO SOCIAL";
 
-/* ================= MEMÓRIA DE STATUS (NOVO) ================= */
-const previousStatus = {
+// memória para detectar mudança de status
+const statusMemory = {
   painel: [],
   agenda: [],
   social: []
 };
 
-/* ================= SOM (NOVO) ================= */
+function updateClock(){
+  const n=new Date();
+  document.getElementById("clock").innerText=
+    n.toLocaleDateString("pt-BR")+" — "+n.toLocaleTimeString("pt-BR");
+}
+setInterval(updateClock,1000);updateClock();
+
+function parseGvizText(t){return JSON.parse(t.substring(t.indexOf("{"),t.lastIndexOf("}")+1));}
+function escapeHtml(s){return String(s??"").replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));}
+function formatCell(c){if(c==null)return"";if(typeof c==="object")return c.f??formatCell(c.v);return String(c);}
+
+function detectStatusChange(key,g){
+  if(!g?.table?.rows) return false;
+  const current = g.table.rows.map(r=>{
+    const c=r.c||[];
+    const last=c[c.length-1];
+    return String(last?.f??last?.v??"");
+  });
+  const prev = statusMemory[key];
+  let changed = false;
+  if(prev.length && current.length===prev.length){
+    changed = current.some((v,i)=>v!==prev[i]);
+  }
+  statusMemory[key] = current;
+  return changed;
+}
+
 function playBeep(){
-  const a = document.getElementById("beep");
+  const a=document.getElementById("beep");
   if(!a) return;
-  a.currentTime = 0;
+  a.currentTime=0;
   a.play().catch(()=>{});
 }
 
-/* ================= RELÓGIO ================= */
-function updateClock(){
-  const n = new Date();
-  clock.innerText = n.toLocaleDateString("pt-BR")+" — "+n.toLocaleTimeString("pt-BR");
-}
-setInterval(updateClock,1000);
-updateClock();
-
-/* ================= HELPERS ================= */
-function parseGvizText(t){
-  return JSON.parse(t.substring(t.indexOf("{"),t.lastIndexOf("}")+1));
-}
-
-function escapeHtml(s){
-  return String(s ?? "").replace(/[&<>]/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;" }[m]));
-}
-
-function formatCell(c){
-  if(c==null) return "";
-  if(typeof c==="object"){
-    if(c.f!=null) return c.f;
-    if(c.v!=null) return formatCell(c.v);
-    return "";
-  }
-  return String(c);
-}
-
-/* ================= DETECTA MUDANÇA (NOVO) ================= */
-function detectStatusChange(key, g){
-  if(!g?.table?.rows) return;
-
-  const current = g.table.rows.map(r=>{
-    const c = r.c || [];
-    const last = c[c.length-1];
-    return String(last?.f ?? last?.v ?? "").toLowerCase();
-  });
-
-  if(previousStatus[key].length){
-    if(current.some((s,i)=>s!==previousStatus[key][i])){
-      playBeep();
-    }
-  }
-  previousStatus[key] = current;
-}
-
-/* ================= RENDER ================= */
 function renderTable(id,g){
   const el=document.getElementById(id);
-  if(!g?.table?.cols){
-    el.innerHTML="<div style='text-align:center;opacity:.7'>Sem dados</div>";
-    return;
-  }
+  if(!g?.table?.cols){el.innerHTML="<div style='opacity:.7;text-align:center'>Sem dados</div>";return;}
 
   const cols=g.table.cols.map(c=>c.label||"");
   const rows=g.table.rows||[];
-
   let h="<table><thead><tr>";
   cols.forEach(c=>h+=`<th>${escapeHtml(c)}</th>`);
   h+="</tr></thead><tbody>";
 
   rows.forEach(r=>{
     const cells=r.c||[];
-    const last=cells[cells.length-1];
-    const status=String(last?.f??last?.v??"").toLowerCase();
-
+    const status=String(cells.at(-1)?.f??cells.at(-1)?.v??"").toLowerCase();
     let cls="";
-    if(status.includes("cancelado"))cls="status-cancelado";
-    else if(status.includes("concluido"))cls="status-concluido";
-    else if(status.includes("andamento"))cls="status-andamento";
-    else if(status.includes("atendido"))cls="status-atendido";
+    if(status.includes("andamento"))cls="status-andamento";
+    if(status.includes("concluido")||status.includes("concluído"))cls="status-concluido";
+    if(status.includes("atendido"))cls="status-atendido";
 
-    h+=`<tr class="${cls}">`;
-
-    cells.forEach((c,i)=>{
-      if(i===cells.length-1){
-        if(status.includes("concluido")||status.includes("atendido"))
-          h+=`<td class="status-icon">✔</td>`;
-        else if(status.includes("cancelado"))
-          h+=`<td class="status-icon">✖</td>`;
-        else if(status.includes("andamento"))
-          h+=`<td class="status-icon">⏳</td>`;
-        else
-          h+=`<td></td>`;
-      }else{
-        h+=`<td>${escapeHtml(formatCell(c))}</td>`;
-      }
-    });
-
+    h+=`<tr class='${cls}'>`;
+    cells.forEach(c=>h+=`<td>${escapeHtml(formatCell(c))}</td>`);
     h+="</tr>";
   });
 
@@ -256,14 +130,12 @@ function renderTable(id,g){
   el.innerHTML=h;
 }
 
-/* ================= FETCH ================= */
 async function fetchSheet(tab){
-  const u=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${encodeURIComponent(tab)}&tqx=out:json&nocache=${Date.now()}`;
+  const u=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tab)}&nocache=${Date.now()}`;
   const r=await fetch(u,{cache:"no-store"});
   return parseGvizText(await r.text());
 }
 
-/* ================= LOAD ================= */
 async function loadAll(){
   try{
     const [p,a,s]=await Promise.all([
@@ -271,23 +143,16 @@ async function loadAll(){
       fetchSheet(TAB_AGENDA),
       fetchSheet(TAB_SS)
     ]);
-
-    detectStatusChange("painel",p);
-    detectStatusChange("agenda",a);
-    detectStatusChange("social",s);
-
+    if(detectStatusChange("painel",p)) playBeep();
     renderTable("painel",p);
+    if(detectStatusChange("agenda",a)) playBeep();
     renderTable("agenda",a);
+    if(detectStatusChange("social",s)) playBeep();
     renderTable("social",s);
-
-  }catch(e){
-    console.error(e);
-  }
+  }catch(e){console.error(e)}
 }
 
-loadAll();
-setInterval(loadAll,60000);
+loadAll();setInterval(loadAll,60000);
 </script>
-
 </body>
 </html>
