@@ -80,24 +80,25 @@ function playBeep(){
   a.play().catch(()=>{});
 }
 
-/* 🔓 desbloqueio obrigatório (1 clique) */
+/* 🔓 LIBERAÇÃO OBRIGATÓRIA (1 clique) */
 document.addEventListener("click", () => {
   const a = document.getElementById("beep");
   if(!a || audioUnlocked) return;
 
-  a.volume = 10.6;
+  a.volume = 0.6;
+
   a.play().then(() => {
     a.pause();
     a.currentTime = 0;
     audioUnlocked = true;
     console.log("🔊 Áudio liberado");
-  }).catch(()=>{});
-}, { once:true });
 
-/* 🔊 som ao carregar a página */
-window.addEventListener("load", () => {
-  setTimeout(playBeep, 500);
-});
+    // 🔊 toca imediatamente após liberar
+    playBeep();
+
+  }).catch(err => console.warn("Áudio bloqueado", err));
+
+}, { once:true });
 
 /* ================= RELÓGIO ================= */
 function updateClock(){
@@ -168,7 +169,8 @@ async function fetchSheet(tab){
 /* ================= LOAD ================= */
 async function loadAll(){
   try{
-    playBeep(); // 🔊 som a cada atualização automática
+    // 🔊 som em TODA atualização (após liberação)
+    playBeep();
 
     const [p,a,s] = await Promise.all([
       fetchSheet(TAB_PAINEL),
@@ -186,5 +188,5 @@ async function loadAll(){
 }
 
 loadAll();
-setInterval(loadAll, 10000); // 60s
+setInterval(loadAll, 10000); // 10s
 </script>
