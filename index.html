@@ -66,11 +66,13 @@ tr.status-concluido{background:rgba(0,200,120,.12)}
 <script>
 /* ================= CONFIG ================= */
 const SHEET_ID = "1Ch3AjQ0MDo4WuQWFDR3r8nZrHb4yQkSLOtT5_QgxT6E";
-const TABS = ["PAINEL","AGENDA DO DIA","AGENDA SERVIÇO SOCIAL"];
+const TAB_PAINEL = "PAINEL";
+const TAB_AGENDA = "AGENDA DO DIA";
+const TAB_SS     = "AGENDA SERVIÇO SOCIAL";
 
 /* ================= ÁUDIO ================= */
 let audioUnlocked = false;
-let lastHash = null;
+let lastDataHash = null;
 
 function playBeep(){
   const a = document.getElementById("beep");
@@ -79,56 +81,117 @@ function playBeep(){
   a.play().catch(()=>{});
 }
 
-/* 🔓 desbloqueio obrigatório */
+/* 🔓 desbloqueio obrigatório (1 clique) */
 document.addEventListener("click", () => {
   const a = document.getElementById("beep");
   if(!a || audioUnlocked) return;
 
   a.volume = 0.6;
-  a.play().then(()=>{
+
+  a.play().then(() => {
     a.pause();
     a.currentTime = 0;
     audioUnlocked = true;
-    console.log("🔊 áudio liberado");
+    console.log("🔊 Áudio liberado");
   }).catch(()=>{});
 }, { once:true });
 
+/* ================= RELÓGIO ================= */
+function updateClock(){
+  const n = new Date();
+  document.getElementById("clock").innerText =
+    n.toLocaleDateString("pt-BR") + " — " + n.toLocaleTimeString("pt-BR");
+}
+setInterval(updateClock,1000);
+updateClock();
+
 /* ================= HELPERS ================= */
-function parseGviz(t){
-  return JSON.parse(t.substring(t.indexOf("{"),t.lastIndexOf("}")+1));
+function parseGvizText(t){
+  return JSON.parse(t.substring(t.indexOf("{"), t.lastIndexOf("}") + 1));
 }
 
-async function fetchSheet(tab){
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${encodeURIComponent(tab)}&tqx=out:json&nocache=${Date.now()}`;
-  const r = await fetch(url,{cache:"no-store"});
-  return parseGviz(await r.text());
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>]/g, m => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;"
+  }[m]));
 }
 
-/* 🔐 gera assinatura */
-function makeHash(data){
+function formatCell(c){
+  if(c == null) return "";
+  if(typeof c === "object") return c.f ?? formatCell(c.v);
+  return String(c);
+}
+
+/* 🔐 GERA ASSINATURA DOS DADOS */
+function generateHash(data){
   return JSON.stringify(data);
+}
+
+/* ================= RENDER ================= */
+function renderTable(id, g){
+  const el = document.getElementById(id);
+  if(!g?.table?.cols){
+    el.innerHTML = "<div style='opacity:.7;text-align:center'>Sem dados</div>";
+    return;
+  }
+
+  const cols = g.table.cols.map(c => c.label || "");
+  const rows = g.table.rows || [];
+
+  let h = "<table><thead><tr>";
+  cols.forEach(c => h += `<th>${escapeHtml(c)}</th>`);
+  h += "</tr></thead><tbody>";
+
+  rows.forEach(r => {
+    const cells = r.c || [];
+    const status = String(cells.at(-1)?.f ?? cells.at(-1)?.v ?? "").toLowerCase();
+
+    let cls = "";
+    if(status.includes("andamento")) cls = "status-andamento";
+    if(status.includes("concluido") || status.includes("concluído")) cls = "status-concluido";
+    if(status.includes("atendido")) cls = "status-atendido";
+
+    h += `<tr class="${cls}">`;
+    cells.forEach(c => h += `<td>${escapeHtml(formatCell(c))}</td>`);
+    h += "</tr>";
+  });
+
+  h += "</tbody></table>";
+  el.innerHTML = h;
+}
+
+/* ================= FETCH ================= */
+async function fetchSheet(tab){
+  const u = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${encodeURIComponent(tab)}&tqx=out:json&nocache=${Date.now()}`;
+  const r = await fetch(u, { cache:"no-store" });
+  return parseGvizText(await r.text());
 }
 
 /* ================= LOAD ================= */
 async function loadAll(){
   try{
-    const sheets = await Promise.all(TABS.map(fetchSheet));
+    const [p,a,s] = await Promise.all([
+      fetchSheet(TAB_PAINEL),
+      fetchSheet(TAB_AGENDA),
+      fetchSheet(TAB_SS)
+    ]);
 
-    const currentHash = makeHash(
-      sheets.map(s => s?.table?.rows ?? [])
-    );
+    /* 🔍 verifica mudança REAL */
+    const currentHash = generateHash([
+      p.table.rows,
+      a.table.rows,
+      s.table.rows
+    ]);
 
-    /* 🔔 SOM SOMENTE SE HOUVER MUDANÇA */
-    if(lastHash && currentHash !== lastHash){
-      playBeep();
+    if(lastDataHash && currentHash !== lastDataHash){
+      playBeep(); // 🔊 SOM SOMENTE SE HOUVER ALTERAÇÃO
     }
 
-    lastHash = currentHash;
+    lastDataHash = currentHash;
 
-    // render (mantém seu render atual)
-    renderTable("painel", sheets[0]);
-    renderTable("agenda", sheets[1]);
-    renderTable("social", sheets[2]);
+    renderTable("painel", p);
+    renderTable("agenda", a);
+    renderTable("social", s);
 
   }catch(e){
     console.error(e);
