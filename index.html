@@ -72,6 +72,7 @@ const TAB_SS     = "AGENDA SERVIÇO SOCIAL";
 
 /* ================= ÁUDIO ================= */
 let audioUnlocked = false;
+let lastDataHash = null;
 
 function playBeep(){
   const a = document.getElementById("beep");
@@ -80,7 +81,7 @@ function playBeep(){
   a.play().catch(()=>{});
 }
 
-/* 🔓 LIBERAÇÃO OBRIGATÓRIA (1 clique) */
+/* 🔓 desbloqueio obrigatório (1 clique) */
 document.addEventListener("click", () => {
   const a = document.getElementById("beep");
   if(!a || audioUnlocked) return;
@@ -92,12 +93,7 @@ document.addEventListener("click", () => {
     a.currentTime = 0;
     audioUnlocked = true;
     console.log("🔊 Áudio liberado");
-
-    // 🔊 toca imediatamente após liberar
-    playBeep();
-
-  }).catch(err => console.warn("Áudio bloqueado", err));
-
+  }).catch(()=>{});
 }, { once:true });
 
 /* ================= RELÓGIO ================= */
@@ -124,6 +120,11 @@ function formatCell(c){
   if(c == null) return "";
   if(typeof c === "object") return c.f ?? formatCell(c.v);
   return String(c);
+}
+
+/* 🔐 GERA ASSINATURA DOS DADOS */
+function generateHash(data){
+  return JSON.stringify(data);
 }
 
 /* ================= RENDER ================= */
@@ -169,14 +170,24 @@ async function fetchSheet(tab){
 /* ================= LOAD ================= */
 async function loadAll(){
   try{
-    // 🔊 som em TODA atualização (após liberação)
-    playBeep();
-
     const [p,a,s] = await Promise.all([
       fetchSheet(TAB_PAINEL),
       fetchSheet(TAB_AGENDA),
       fetchSheet(TAB_SS)
     ]);
+
+    /* 🔍 verifica mudança REAL */
+    const currentHash = generateHash([
+      p.table.rows,
+      a.table.rows,
+      s.table.rows
+    ]);
+
+    if(lastDataHash && currentHash !== lastDataHash){
+      playBeep(); // 🔊 SOM SOMENTE SE HOUVER ALTERAÇÃO
+    }
+
+    lastDataHash = currentHash;
 
     renderTable("painel", p);
     renderTable("agenda", a);
@@ -188,5 +199,5 @@ async function loadAll(){
 }
 
 loadAll();
-setInterval(loadAll, 10000); // 10s
+setInterval(loadAll, 10000); // verifica a cada 10s
 </script>
